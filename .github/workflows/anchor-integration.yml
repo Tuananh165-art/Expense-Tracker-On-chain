@@ -1,0 +1,65 @@
+name: Anchor Integration
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  anchor-integration:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: contracts/expense_program
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: contracts/expense_program/package.json
+
+      - name: Cache cargo + solana + avm
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.local/share/solana/install
+            ~/.cache/solana
+            ~/.avm
+            contracts/expense_program/target
+          key: ${{ runner.os }}-anchor-${{ hashFiles('contracts/expense_program/Cargo.lock', 'contracts/expense_program/Anchor.toml', '.github/workflows/anchor-integration.yml') }}
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Solana CLI
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - name: Install AVM + Anchor
+        run: |
+          cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
+          avm install 0.30.1
+          avm use 0.30.1
+          echo "$HOME/.avm/bin" >> "$GITHUB_PATH"
+
+      - name: Prepare Solana keypair
+        run: |
+          mkdir -p ~/.config/solana
+          solana-keygen new --no-bip39-passphrase -o ~/.config/solana/id.json -f
+          solana config set --url localhost
+
+      - name: Build Anchor program
+        run: anchor build
+
+      - name: Run Anchor integration tests
+        run: anchor test --skip-build --provider.cluster localnet

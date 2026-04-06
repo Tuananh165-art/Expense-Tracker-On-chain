@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 222 31% 9%;
+  --foreground: 210 40% 98%;
+  --card: 224 33% 12%;
+  --card-foreground: 210 40% 98%;
+  --border: 220 27% 22%;
+  --input: 220 27% 18%;
+  --primary: 258 90% 66%;
+  --primary-foreground: 210 40% 98%;
+  --secondary: 220 24% 18%;
+  --secondary-foreground: 210 40% 98%;
+  --muted: 220 20% 16%;
+  --muted-foreground: 215 20% 70%;
+  --accent: 190 95% 45%;
+  --accent-foreground: 222 47% 11%;
+  --success: 144 60% 45%;
+  --success-foreground: 210 40% 98%;
+  --radius: 0.8rem;
+}
+
+* {
+  @apply border-border;
+}
+
+body {
+  @apply min-h-screen bg-background bg-chain-grid text-foreground antialiased;
+}
+
+input,
+button,
+textarea,
+select {
+  @apply text-sm;
+}
+
+::selection {
+  @apply bg-primary/30 text-foreground;
+}

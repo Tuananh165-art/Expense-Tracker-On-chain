@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install deps
+        run: pnpm install --frozen-lockfile=false
+      - name: Lint web
+        run: pnpm --filter web lint
+      - name: Build web
+        run: pnpm --filter web build
+
+  api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Rust fmt check
+        run: cargo fmt --manifest-path apps/api/Cargo.toml --all -- --check
+      - name: Rust test
+        run: cargo test --manifest-path apps/api/Cargo.toml
+
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Rust fmt check (contract)
+        run: cargo fmt --manifest-path contracts/expense_program/Cargo.toml --all -- --check
+      - name: Rust test (contract crate)
+        run: cargo test --manifest-path contracts/expense_program/Cargo.toml
+
+  anchor-integration-required:
+    needs: [contract]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Anchor integration reference
+        run: echo "Anchor integration tests run in .github/workflows/anchor-integration.yml"

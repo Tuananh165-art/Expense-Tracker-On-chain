@@ -1,0 +1,27 @@
+# Node
+node_modules/
+.pnpm-store/
+.next/
+out/
+coverage/
+
+# Rust
+target/
+**/*.rs.bk
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# OS / IDE
+.DS_Store
+.vscode/
+.idea/
+
+# Anchor / Solana artifacts
+contracts/expense_program/target/
+contracts/expense_program/.anchor/

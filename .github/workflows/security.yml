@@ -1,0 +1,30 @@
+name: Security
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  dependency-and-secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install deps
+        run: pnpm install --frozen-lockfile=false
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked || true
+      - name: Install gitleaks
+        run: |
+          curl -sSL https://raw.githubusercontent.com/gitleaks/gitleaks/master/install.sh | sh -s -- -b /usr/local/bin
+      - name: Run security checks
+        run: bash scripts/security-check.sh
