@@ -17,6 +17,11 @@ const config: Config = {
         "card-foreground": "hsl(var(--card-foreground))",
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
+        surface: {
+          1: "hsl(var(--surface-1))",
+          2: "hsl(var(--surface-2))",
+          3: "hsl(var(--surface-3))",
+        },
         primary: {
           DEFAULT: "hsl(var(--primary))",
           foreground: "hsl(var(--primary-foreground))",
@@ -53,11 +58,18 @@ const config: Config = {
         "fade-in-up": "fade-in-up 420ms ease-out",
       },
       boxShadow: {
-        glow: "0 0 0 1px hsl(var(--primary) / 0.25), 0 0 32px hsl(var(--primary) / 0.2)",
+        glow: "0 0 0 1px hsl(var(--primary) / 0.3), 0 0 34px hsl(var(--primary) / 0.24)",
+        elevated: "0 22px 55px -26px hsl(var(--background) / 0.9)",
+        soft: "0 10px 26px -18px hsl(var(--background) / 0.78)",
+        panel: "0 0 0 1px hsl(var(--border-strong) / 0.35), 0 18px 40px -26px hsl(var(--background) / 0.92)",
       },
       backgroundImage: {
         "chain-grid":
-          "radial-gradient(circle at 20% 20%, hsl(var(--primary) / 0.14), transparent 35%), radial-gradient(circle at 80% 0%, hsl(var(--accent) / 0.18), transparent 30%), linear-gradient(to bottom right, hsl(var(--background)), hsl(var(--muted) / 0.28))",
+          "radial-gradient(circle at 14% 8%, hsl(var(--primary) / 0.18), transparent 38%), radial-gradient(circle at 86% 4%, hsl(var(--accent) / 0.2), transparent 34%), radial-gradient(circle at 50% 100%, hsl(var(--primary) / 0.1), transparent 40%), linear-gradient(145deg, hsl(var(--background)), hsl(var(--surface-1)))",
+        "premium-sheen":
+          "linear-gradient(135deg, hsl(var(--foreground) / 0.08), transparent 34%, hsl(var(--primary) / 0.12) 66%, transparent)",
+        "aurora-panel":
+          "radial-gradient(120% 120% at 0% 0%, hsl(var(--primary) / 0.14), transparent 45%), radial-gradient(100% 100% at 100% 0%, hsl(var(--accent) / 0.16), transparent 45%), linear-gradient(180deg, hsl(var(--surface-1)), hsl(var(--surface-2)))",
       },
     },
   },

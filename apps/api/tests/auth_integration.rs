@@ -1,9 +1,12 @@
-use axum::{body::Body, http::{Request, StatusCode}};
+use axum::{
+    body::Body,
+    http::{Request, StatusCode},
+};
 use ed25519_dalek::{Signer, SigningKey};
 use expense_tracker_api::{
     build_app,
     config::AppConfig,
-    models::{RefreshTokenRecord, Role, User},
+    models::{Category, Expense, ExpenseStatus, RefreshTokenRecord, Role, User},
     routes::auth::{AuthTokensResponse, ChallengeResponse},
     state::AppState,
 };
@@ -22,7 +25,16 @@ async fn call_json(app: &axum::Router, req: Request<Body>) -> (StatusCode, Value
 
 fn app_state_for_test() -> AppState {
     let cfg = AppConfig::from_env();
-    AppState::new(cfg)
+    AppState::new(cfg, None)
+}
+
+fn app_state_for_test_with<F>(mutator: F) -> AppState
+where
+    F: FnOnce(&mut AppConfig),
+{
+    let mut cfg = AppConfig::from_env();
+    mutator(&mut cfg);
+    AppState::new(cfg, None)
 }
 
 #[tokio::test]
@@ -40,12 +52,13 @@ async fn refresh_reuse_revokes_family() {
         &family_id,
         &state.config.jwt_secret,
         3600,
-    ).unwrap().0;
+    )
+    .unwrap()
+    .0;
 
-    let refresh_claims = expense_tracker_api::security::jwt::decode_jwt(
-        &refresh_token,
-        &state.config.jwt_secret,
-    ).unwrap();
+    let refresh_claims =
+        expense_tracker_api::security::jwt::decode_jwt(&refresh_token, &state.config.jwt_secret)
+            .unwrap();
 
     state.refresh_tokens.write().await.insert(
         refresh_claims.jti.clone(),
@@ -63,7 +76,9 @@ async fn refresh_reuse_revokes_family() {
         .method("POST")
         .uri("/api/v1/auth/refresh")
         .header("content-type", "application/json")
-        .body(Body::from(json!({ "refresh_token": refresh_token }).to_string()))
+        .body(Body::from(
+            json!({ "refresh_token": refresh_token }).to_string(),
+        ))
         .unwrap();
 
     let (status, _) = call_json(&app, req).await;
@@ -131,7 +146,8 @@ async fn audit_logs_requires_admin_or_auditor() {
         &Uuid::new_v4().to_string(),
         &state.config.jwt_secret,
         3600,
-    ).unwrap();
+    )
+    .unwrap();
 
     let req = Request::builder()
         .method("GET")
@@ -152,12 +168,15 @@ async fn refresh_route_returns_tokens() {
     let user_id = Uuid::new_v4();
     let family_id = Uuid::new_v4().to_string();
 
-    state.users.write().await.insert(user_id, expense_tracker_api::models::User {
-        id: user_id,
-        wallet_address: "wallet-ok".to_string(),
-        role: Role::User,
-        created_at: chrono::Utc::now(),
-    });
+    state.users.write().await.insert(
+        user_id,
+        expense_tracker_api::models::User {
+            id: user_id,
+            wallet_address: "wallet-ok".to_string(),
+            role: Role::User,
+            created_at: chrono::Utc::now(),
+        },
+    );
 
     let (refresh_token, claims) = expense_tracker_api::security::jwt::encode_refresh_jwt(
         user_id,
@@ -166,7 +185,8 @@ async fn refresh_route_returns_tokens() {
         &family_id,
         &state.config.jwt_secret,
         3600,
-    ).unwrap();
+    )
+    .unwrap();
 
     state.refresh_tokens.write().await.insert(
         claims.jti.clone(),
@@ -184,7 +204,9 @@ async fn refresh_route_returns_tokens() {
         .method("POST")
         .uri("/api/v1/auth/refresh")
         .header("content-type", "application/json")
-        .body(Body::from(json!({ "refresh_token": refresh_token }).to_string()))
+        .body(Body::from(
+            json!({ "refresh_token": refresh_token }).to_string(),
+        ))
         .unwrap();
 
     let (status, body) = call_json(&app, req).await;
@@ -205,7 +227,9 @@ async fn challenge_endpoint_works() {
         .method("POST")
         .uri("/api/v1/auth/challenge")
         .header("content-type", "application/json")
-        .body(Body::from(json!({ "wallet_address": "wallet-demo" }).to_string()))
+        .body(Body::from(
+            json!({ "wallet_address": "wallet-demo" }).to_string(),
+        ))
         .unwrap();
 
     let (status, body) = call_json(&app, req).await;
@@ -229,7 +253,9 @@ async fn full_flow_verify_refresh_logout_then_refresh_fail() {
         .method("POST")
         .uri("/api/v1/auth/challenge")
         .header("content-type", "application/json")
-        .body(Body::from(json!({ "wallet_address": wallet_address }).to_string()))
+        .body(Body::from(
+            json!({ "wallet_address": wallet_address }).to_string(),
+        ))
         .unwrap();
     let (challenge_status, challenge_body) = tokio::time::timeout(
         std::time::Duration::from_secs(5),
@@ -286,7 +312,10 @@ async fn full_flow_verify_refresh_logout_then_refresh_fail() {
         .method("POST")
         .uri("/api/v1/auth/logout")
         .header("content-type", "application/json")
-        .header("authorization", format!("Bearer {}", refreshed_tokens.access_token))
+        .header(
+            "authorization",
+            format!("Bearer {}", refreshed_tokens.access_token),
+        )
         .body(Body::from(
             json!({ "refresh_token": refreshed_tokens.refresh_token }).to_string(),
         ))
@@ -314,6 +343,287 @@ async fn full_flow_verify_refresh_logout_then_refresh_fail() {
     .await
     .expect("refresh-after-logout request timed out");
     assert_eq!(refresh_after_logout_status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn admin_can_update_expense_status_with_idempotency_and_audit() {
+    let state = app_state_for_test();
+    let app = build_app(state.clone());
+
+    let owner_id = Uuid::new_v4();
+    let admin_id = Uuid::new_v4();
+    let category_id = Uuid::new_v4();
+    let expense_id = Uuid::new_v4();
+
+    state.users.write().await.insert(
+        owner_id,
+        User {
+            id: owner_id,
+            wallet_address: "wallet-owner".to_string(),
+            role: Role::User,
+            created_at: chrono::Utc::now(),
+        },
+    );
+    state.users.write().await.insert(
+        admin_id,
+        User {
+            id: admin_id,
+            wallet_address: "wallet-admin".to_string(),
+            role: Role::Admin,
+            created_at: chrono::Utc::now(),
+        },
+    );
+
+    state.categories.write().await.insert(
+        category_id,
+        Category {
+            id: category_id,
+            owner_user_id: owner_id,
+            name: "food".to_string(),
+            created_at: chrono::Utc::now(),
+        },
+    );
+
+    state.expenses.write().await.insert(
+        expense_id,
+        Expense {
+            id: expense_id,
+            owner_user_id: owner_id,
+            category_id,
+            amount_minor: 150000,
+            currency: "VND".to_string(),
+            status: ExpenseStatus::Pending,
+            tx_hash: None,
+            occurred_at: chrono::Utc::now(),
+            created_at: chrono::Utc::now(),
+        },
+    );
+
+    let (admin_token, _) = expense_tracker_api::security::jwt::encode_access_jwt(
+        admin_id,
+        "wallet-admin",
+        &Role::Admin,
+        &Uuid::new_v4().to_string(),
+        &state.config.jwt_secret,
+        3600,
+    )
+    .unwrap();
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/expenses/{}/status", expense_id))
+        .header("content-type", "application/json")
+        .header("x-idempotency-key", "k-1")
+        .header("authorization", format!("Bearer {}", admin_token))
+        .body(Body::from(
+            json!({ "status": "approved", "reason": "verified" }).to_string(),
+        ))
+        .unwrap();
+
+    let (status, body) = call_json(&app, req).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["status"], "approved");
+
+    let req_replay = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/expenses/{}/status", expense_id))
+        .header("content-type", "application/json")
+        .header("x-idempotency-key", "k-1")
+        .header("authorization", format!("Bearer {}", admin_token))
+        .body(Body::from(
+            json!({ "status": "approved", "reason": "verified" }).to_string(),
+        ))
+        .unwrap();
+
+    let (status_replay, body_replay) = call_json(&app, req_replay).await;
+    assert_eq!(status_replay, StatusCode::OK);
+    assert_eq!(body_replay["status"], "approved");
+
+    let logs = state.audit_logs.read().await;
+    let approve_logs = logs
+        .iter()
+        .filter(|x| {
+            x.action == "expense.approve" && x.target_id.as_deref() == Some(&expense_id.to_string())
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(approve_logs.len(), 1);
+    assert_eq!(approve_logs[0].metadata["from_status"], "pending");
+    assert_eq!(approve_logs[0].metadata["to_status"], "approved");
+}
+
+#[tokio::test]
+async fn non_admin_cannot_update_expense_status() {
+    let state = app_state_for_test();
+    let app = build_app(state.clone());
+
+    let owner_id = Uuid::new_v4();
+    let category_id = Uuid::new_v4();
+    let expense_id = Uuid::new_v4();
+
+    state.users.write().await.insert(
+        owner_id,
+        User {
+            id: owner_id,
+            wallet_address: "wallet-owner".to_string(),
+            role: Role::User,
+            created_at: chrono::Utc::now(),
+        },
+    );
+
+    state.categories.write().await.insert(
+        category_id,
+        Category {
+            id: category_id,
+            owner_user_id: owner_id,
+            name: "food".to_string(),
+            created_at: chrono::Utc::now(),
+        },
+    );
+
+    state.expenses.write().await.insert(
+        expense_id,
+        Expense {
+            id: expense_id,
+            owner_user_id: owner_id,
+            category_id,
+            amount_minor: 150000,
+            currency: "VND".to_string(),
+            status: ExpenseStatus::Pending,
+            tx_hash: None,
+            occurred_at: chrono::Utc::now(),
+            created_at: chrono::Utc::now(),
+        },
+    );
+
+    let (user_token, _) = expense_tracker_api::security::jwt::encode_access_jwt(
+        owner_id,
+        "wallet-owner",
+        &Role::User,
+        &Uuid::new_v4().to_string(),
+        &state.config.jwt_secret,
+        3600,
+    )
+    .unwrap();
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/expenses/{}/status", expense_id))
+        .header("content-type", "application/json")
+        .header("x-idempotency-key", "k-2")
+        .header("authorization", format!("Bearer {}", user_token))
+        .body(Body::from(json!({ "status": "approved" }).to_string()))
+        .unwrap();
+
+    let (status, _) = call_json(&app, req).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn invalid_status_transition_and_validation_errors() {
+    let state = app_state_for_test();
+    let app = build_app(state.clone());
+
+    let owner_id = Uuid::new_v4();
+    let admin_id = Uuid::new_v4();
+    let category_id = Uuid::new_v4();
+    let expense_id = Uuid::new_v4();
+
+    state.users.write().await.insert(
+        owner_id,
+        User {
+            id: owner_id,
+            wallet_address: "wallet-owner".to_string(),
+            role: Role::User,
+            created_at: chrono::Utc::now(),
+        },
+    );
+    state.users.write().await.insert(
+        admin_id,
+        User {
+            id: admin_id,
+            wallet_address: "wallet-admin".to_string(),
+            role: Role::Admin,
+            created_at: chrono::Utc::now(),
+        },
+    );
+
+    state.categories.write().await.insert(
+        category_id,
+        Category {
+            id: category_id,
+            owner_user_id: owner_id,
+            name: "food".to_string(),
+            created_at: chrono::Utc::now(),
+        },
+    );
+
+    state.expenses.write().await.insert(
+        expense_id,
+        Expense {
+            id: expense_id,
+            owner_user_id: owner_id,
+            category_id,
+            amount_minor: 150000,
+            currency: "VND".to_string(),
+            status: ExpenseStatus::Approved,
+            tx_hash: None,
+            occurred_at: chrono::Utc::now(),
+            created_at: chrono::Utc::now(),
+        },
+    );
+
+    let (admin_token, _) = expense_tracker_api::security::jwt::encode_access_jwt(
+        admin_id,
+        "wallet-admin",
+        &Role::Admin,
+        &Uuid::new_v4().to_string(),
+        &state.config.jwt_secret,
+        3600,
+    )
+    .unwrap();
+
+    let req_missing_key = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/expenses/{}/status", expense_id))
+        .header("content-type", "application/json")
+        .header("authorization", format!("Bearer {}", admin_token))
+        .body(Body::from(json!({ "status": "rejected" }).to_string()))
+        .unwrap();
+    let (status_missing_key, _) = call_json(&app, req_missing_key).await;
+    assert_eq!(status_missing_key, StatusCode::BAD_REQUEST);
+
+    let req_final_status = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/expenses/{}/status", expense_id))
+        .header("content-type", "application/json")
+        .header("x-idempotency-key", "k-3")
+        .header("authorization", format!("Bearer {}", admin_token))
+        .body(Body::from(json!({ "status": "rejected" }).to_string()))
+        .unwrap();
+    let (status_final, _) = call_json(&app, req_final_status).await;
+    assert_eq!(status_final, StatusCode::BAD_REQUEST);
+
+    let req_invalid_path = Request::builder()
+        .method("POST")
+        .uri("/api/v1/expenses/not-a-uuid/status")
+        .header("content-type", "application/json")
+        .header("x-idempotency-key", "k-4")
+        .header("authorization", format!("Bearer {}", admin_token))
+        .body(Body::from(json!({ "status": "approved" }).to_string()))
+        .unwrap();
+    let (status_invalid_path, _) = call_json(&app, req_invalid_path).await;
+    assert_eq!(status_invalid_path, StatusCode::BAD_REQUEST);
+
+    let req_invalid_status = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/expenses/{}/status", expense_id))
+        .header("content-type", "application/json")
+        .header("x-idempotency-key", "k-5")
+        .header("authorization", format!("Bearer {}", admin_token))
+        .body(Body::from(json!({ "status": "pending" }).to_string()))
+        .unwrap();
+    let (status_invalid_status, _) = call_json(&app, req_invalid_status).await;
+    assert_eq!(status_invalid_status, StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
@@ -438,4 +748,176 @@ async fn revoke_scope_self_and_admin() {
 
     let revoked = state.revoked_token_families.read().await;
     assert!(revoked.contains_key(&another_family_id));
+}
+
+#[tokio::test]
+async fn onchain_commit_category_rejects_when_hybrid_disabled() {
+    let state = app_state_for_test_with(|cfg| {
+        cfg.expenses_pg_enabled = true;
+        cfg.hybrid_onchain_enabled = false;
+    });
+    let app = build_app(state.clone());
+
+    let user_id = Uuid::new_v4();
+    let (token, _) = expense_tracker_api::security::jwt::encode_access_jwt(
+        user_id,
+        "9YyQn8bAZWfXjVQ1KojM7QX8HjFhuy9qnR6FpD8Wj6F3",
+        &Role::User,
+        &Uuid::new_v4().to_string(),
+        &state.config.jwt_secret,
+        3600,
+    )
+    .unwrap();
+
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/onchain/categories/commit")
+        .header("content-type", "application/json")
+        .header("authorization", format!("Bearer {}", token))
+        .body(Body::from(
+            json!({ "tx_hash": "2e2N5xLkXv7Qg8K7B4fEm8fQW7d5nWQ2jccZf77nUQ2v8ws5E73H92qUEycdh8Xk3A9gWg3P2dG9XQAK3ZP8vJXR", "category_name": "food" }).to_string(),
+        ))
+        .unwrap();
+
+    let (status, _) = call_json(&app, req).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn onchain_commit_category_rejects_invalid_tx_hash() {
+    let state = app_state_for_test_with(|cfg| {
+        cfg.expenses_pg_enabled = true;
+        cfg.hybrid_onchain_enabled = true;
+    });
+    let app = build_app(state.clone());
+
+    let user_id = Uuid::new_v4();
+    let (token, _) = expense_tracker_api::security::jwt::encode_access_jwt(
+        user_id,
+        "9YyQn8bAZWfXjVQ1KojM7QX8HjFhuy9qnR6FpD8Wj6F3",
+        &Role::User,
+        &Uuid::new_v4().to_string(),
+        &state.config.jwt_secret,
+        3600,
+    )
+    .unwrap();
+
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/onchain/categories/commit")
+        .header("content-type", "application/json")
+        .header("authorization", format!("Bearer {}", token))
+        .body(Body::from(
+            json!({ "tx_hash": "not_base58", "category_name": "food" }).to_string(),
+        ))
+        .unwrap();
+
+    let (status, _) = call_json(&app, req).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn onchain_commit_expense_create_rejects_invalid_payload_before_rpc() {
+    let state = app_state_for_test_with(|cfg| {
+        cfg.expenses_pg_enabled = true;
+        cfg.hybrid_onchain_enabled = true;
+    });
+    let app = build_app(state.clone());
+
+    let user_id = Uuid::new_v4();
+    let (token, _) = expense_tracker_api::security::jwt::encode_access_jwt(
+        user_id,
+        "9YyQn8bAZWfXjVQ1KojM7QX8HjFhuy9qnR6FpD8Wj6F3",
+        &Role::User,
+        &Uuid::new_v4().to_string(),
+        &state.config.jwt_secret,
+        3600,
+    )
+    .unwrap();
+
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/onchain/expenses/commit-create")
+        .header("content-type", "application/json")
+        .header("authorization", format!("Bearer {}", token))
+        .body(Body::from(
+            json!({
+                "tx_hash": "2e2N5xLkXv7Qg8K7B4fEm8fQW7d5nWQ2jccZf77nUQ2v8ws5E73H92qUEycdh8Xk3A9gWg3P2dG9XQAK3ZP8vJXR",
+                "expense_id_onchain": 1,
+                "category_pda": "9YyQn8bAZWfXjVQ1KojM7QX8HjFhuy9qnR6FpD8Wj6F3",
+                "amount_minor": 0,
+                "currency": "VND"
+            })
+            .to_string(),
+        ))
+        .unwrap();
+
+    let (status, _) = call_json(&app, req).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn onchain_commit_expense_status_requires_admin() {
+    let state = app_state_for_test_with(|cfg| {
+        cfg.expenses_pg_enabled = true;
+        cfg.hybrid_onchain_enabled = true;
+    });
+    let app = build_app(state.clone());
+
+    let user_id = Uuid::new_v4();
+    let (token, _) = expense_tracker_api::security::jwt::encode_access_jwt(
+        user_id,
+        "9YyQn8bAZWfXjVQ1KojM7QX8HjFhuy9qnR6FpD8Wj6F3",
+        &Role::User,
+        &Uuid::new_v4().to_string(),
+        &state.config.jwt_secret,
+        3600,
+    )
+    .unwrap();
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/onchain/expenses/{}/commit-status", Uuid::new_v4()))
+        .header("content-type", "application/json")
+        .header("authorization", format!("Bearer {}", token))
+        .body(Body::from(
+            json!({ "tx_hash": "2e2N5xLkXv7Qg8K7B4fEm8fQW7d5nWQ2jccZf77nUQ2v8ws5E73H92qUEycdh8Xk3A9gWg3P2dG9XQAK3ZP8vJXR", "to_status": "approved" }).to_string(),
+        ))
+        .unwrap();
+
+    let (status, _) = call_json(&app, req).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn onchain_commit_expense_status_rejects_pending_target_status() {
+    let state = app_state_for_test_with(|cfg| {
+        cfg.expenses_pg_enabled = true;
+        cfg.hybrid_onchain_enabled = true;
+    });
+    let app = build_app(state.clone());
+
+    let admin_id = Uuid::new_v4();
+    let (token, _) = expense_tracker_api::security::jwt::encode_access_jwt(
+        admin_id,
+        "9YyQn8bAZWfXjVQ1KojM7QX8HjFhuy9qnR6FpD8Wj6F3",
+        &Role::Admin,
+        &Uuid::new_v4().to_string(),
+        &state.config.jwt_secret,
+        3600,
+    )
+    .unwrap();
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/onchain/expenses/{}/commit-status", Uuid::new_v4()))
+        .header("content-type", "application/json")
+        .header("authorization", format!("Bearer {}", token))
+        .body(Body::from(
+            json!({ "tx_hash": "2e2N5xLkXv7Qg8K7B4fEm8fQW7d5nWQ2jccZf77nUQ2v8ws5E73H92qUEycdh8Xk3A9gWg3P2dG9XQAK3ZP8vJXR", "to_status": "pending" }).to_string(),
+        ))
+        .unwrap();
+
+    let (status, _) = call_json(&app, req).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 }

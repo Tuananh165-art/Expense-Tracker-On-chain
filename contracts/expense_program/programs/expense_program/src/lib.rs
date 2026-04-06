@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-declare_id!("Expnse1111111111111111111111111111111111111");
+declare_id!("rzMxNuut6R34aFgt8NY9hj3SoRB37iszrsSqZR2DSnB");
 
 #[program]
 pub mod expense_program {

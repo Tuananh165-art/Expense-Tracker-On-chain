@@ -3,10 +3,10 @@ seeds = false
 skip-lint = false
 
 [programs.localnet]
-expense_program = "Expnse1111111111111111111111111111111111111"
+expense_program = "rzMxNuut6R34aFgt8NY9hj3SoRB37iszrsSqZR2DSnB"
 
 [programs.devnet]
-expense_program = "Expnse1111111111111111111111111111111111111"
+expense_program = "rzMxNuut6R34aFgt8NY9hj3SoRB37iszrsSqZR2DSnB"
 
 [registry]
 url = "https://api.apr.dev"

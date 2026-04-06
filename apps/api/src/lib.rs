@@ -15,7 +15,10 @@ use axum::{
 use serde::Serialize;
 use tower_http::cors::CorsLayer;
 
-use crate::{routes::{auth as auth_routes, v1}, state::AppState};
+use crate::{
+    routes::{auth as auth_routes, v1},
+    state::AppState,
+};
 
 #[derive(Serialize)]
 struct HealthResponse {
@@ -40,11 +43,37 @@ pub fn build_app(state: AppState) -> Router {
 
     let v1_router = Router::new()
         .route("/users/me", get(v1::users::me))
-        .route("/categories", post(v1::categories::create).get(v1::categories::list))
-        .route("/expenses", post(v1::expenses::create).get(v1::expenses::list))
+        .route(
+            "/categories",
+            post(v1::categories::create).get(v1::categories::list),
+        )
+        .route(
+            "/expenses",
+            post(v1::expenses::create).get(v1::expenses::list),
+        )
+        .route(
+            "/expenses/:expense_id/status",
+            post(v1::expenses::update_status),
+        )
+        .route(
+            "/expenses/:expense_id/history",
+            get(v1::expenses::history),
+        )
+        .route("/expenses/search", get(v1::expenses::search))
+        .route(
+            "/onchain/categories/commit",
+            post(v1::onchain_commit::commit_category),
+        )
+        .route(
+            "/onchain/expenses/commit-create",
+            post(v1::onchain_commit::commit_expense_create),
+        )
+        .route(
+            "/onchain/expenses/:expense_id/commit-status",
+            post(v1::onchain_commit::commit_expense_status),
+        )
         .route("/reports/monthly", get(v1::reports::monthly_summary))
         .route("/audit/logs", get(v1::audit::list_logs));
-
     let cors = CorsLayer::new()
         .allow_origin([
             HeaderValue::from_static("http://localhost:3000"),

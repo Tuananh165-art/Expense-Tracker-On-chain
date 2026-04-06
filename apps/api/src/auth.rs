@@ -48,22 +48,49 @@ where
             return Err(AppError::unauthorized("Access token required"));
         }
 
-        if app_state
-            .revoked_access_jtis
-            .read()
-            .await
-            .contains_key(&claims.jti)
-        {
-            return Err(AppError::unauthorized("Token revoked"));
-        }
+        if app_state.config.auth_pg_enabled {
+            let pool = app_state
+                .pg_pool
+                .as_ref()
+                .ok_or_else(|| AppError::internal("postgres pool is not initialized"))?;
 
-        if app_state
-            .revoked_token_families
-            .read()
-            .await
-            .contains_key(&claims.fid)
-        {
-            return Err(AppError::unauthorized("Session revoked"));
+            let access_revoked = sqlx::query("SELECT 1 FROM revoked_access_tokens WHERE jti = $1")
+                .bind(&claims.jti)
+                .fetch_optional(pool)
+                .await
+                .map_err(|_| AppError::internal("failed to check revoked access token"))?
+                .is_some();
+            if access_revoked {
+                return Err(AppError::unauthorized("Token revoked"));
+            }
+
+            let family_revoked = sqlx::query("SELECT 1 FROM revoked_token_families WHERE family_id = $1")
+                .bind(&claims.fid)
+                .fetch_optional(pool)
+                .await
+                .map_err(|_| AppError::internal("failed to check revoked token family"))?
+                .is_some();
+            if family_revoked {
+                return Err(AppError::unauthorized("Session revoked"));
+            }
+        } else {
+            if app_state
+                .revoked_access_jtis
+                .read()
+                .await
+                .contains_key(&claims.jti)
+            {
+                return Err(AppError::unauthorized("Token revoked"));
+            }
+
+            if app_state
+                .revoked_token_families
+                .read()
+                .await
+                .contains_key(&claims.fid)
+            {
+                return Err(AppError::unauthorized("Session revoked"));
+            }
         }
 
         let user_id = claims

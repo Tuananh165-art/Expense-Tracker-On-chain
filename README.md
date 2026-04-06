@@ -1,88 +1,89 @@
 # Expense Tracker On-chain
 
-Ứng dụng quản lý chi tiêu cá nhân theo hướng **minh bạch & kiểm toán được**:
-- **On-chain (Solana/Anchor)** cho phần dữ liệu/trạng thái cần tính bất biến.
-- **Off-chain (Rust/Axum)** cho API, auth, RBAC, báo cáo, tốc độ truy vấn.
-- **Frontend (Next.js)** cho trải nghiệm dashboard hiện đại.
+Ứng dụng quản lý chi tiêu theo mô hình **hybrid on-chain + off-chain**:
+- **On-chain (Solana/Anchor):** ghi nhận transaction có thể kiểm toán.
+- **Off-chain (Rust/Axum + Postgres):** auth, RBAC, read model, reporting.
+- **Frontend (Next.js):** dashboard và wallet UX.
 
 ---
 
-## 1) Bài toán dự án giải quyết
+## 1) Mục tiêu
 
-### Vấn đề
-- App chi tiêu truyền thống dễ thiếu minh bạch lịch sử thay đổi.
-- Khó audit khi cần đối soát giao dịch quan trọng.
-- UX blockchain thường khó dùng với người dùng phổ thông.
-
-### Solution của project
-- Dùng mô hình **hybrid on-chain + off-chain**:
-  - On-chain lưu/đối soát các trạng thái quan trọng.
-  - Off-chain phục vụ read model, tổng hợp báo cáo, phân quyền.
-- Đăng nhập ví Solana 1-click (challenge/sign/verify) để cấp JWT phiên làm việc.
-- Có audit log + idempotency cho API ghi.
+- Minh bạch lịch sử thay đổi expense/category.
+- Có audit trail rõ ràng.
+- Giữ UX dễ dùng như app web thông thường.
 
 ---
 
-## 2) Tính năng hiện có
+## 2) Kiến trúc repo
 
-- Wallet auth (Solana): connect + sign message + verify JWT.
-- Categories: tạo và liệt kê danh mục chi tiêu.
-- Expenses: tạo expense, hỗ trợ `x-idempotency-key`.
-- Monthly Report: tổng chi tiêu và tổng theo category.
-- Role-based access: `user`, `admin`, `auditor`.
-
----
-
-## 3) Kiến trúc & cấu trúc repo
-
-- `contracts/expense_program`: Anchor smart contract (Rust)
-- `apps/api`: Backend API (Axum)
-- `apps/web`: Frontend dashboard (Next.js)
-- `scripts/`: script chạy local/dev/test/deploy
-- `docs/`: tài liệu kiến trúc, bảo mật, workflow
-
-Xem thêm: [docs/Architecture.md](docs/Architecture.md)
+- `contracts/expense_program` — Anchor program
+- `apps/api` — Axum API
+- `apps/web` — Next.js frontend
+- `packages/shared` — shared DTO/types
+- `packages/sdk` — API client SDK
+- `infra/migrations` — SQL migrations
+- `scripts` — local/dev verification scripts
 
 ---
 
-## 4) Tech stack
-
-- **Smart contract:** Rust, Anchor, Solana localnet/devnet
-- **Backend:** Rust, Axum, Tokio, JWT, tower-http CORS
-- **Frontend:** Next.js 15, React 18, TypeScript, TanStack Query
-- **UI/UX:** TailwindCSS, shadcn-style components, Framer Motion
-- **Tooling:** pnpm workspace, bash scripts
-
----
-
-## 5) Yêu cầu môi trường
+## 3) Yêu cầu môi trường
 
 - Node.js >= 20
 - pnpm >= 9
 - Rust stable + cargo
-- Solana CLI + Anchor CLI (khi chạy contract)
-- Khuyến nghị chạy validator trên **WSL** nếu Windows gặp lỗi quyền truy cập
+- Solana CLI
+- Anchor CLI
+- Docker + Docker Compose (Postgres)
 
 ---
 
-## 6) Cài đặt nhanh
+## 4) Cài dependencies
 
 ```bash
 pnpm install
 ```
 
-Copy `.env.example` -> `.env`, rồi điền các biến chính:
-- `SOLANA_RPC_URL`
-- `PROGRAM_ID`
-- `NEXT_PUBLIC_PROGRAM_ID`
-- `NEXT_PUBLIC_SOLANA_CLUSTER`
-- `JWT_SECRET`
+---
+
+## 5) Cấu hình env
+
+## 5.1 Root `.env` (API/contract runtime)
+
+Tạo `.env` từ `.env.example`, bảo đảm các biến sau đúng:
+
+```env
+EXPENSES_PG_ENABLED=true
+AUTH_PG_ENABLED=true
+HYBRID_ONCHAIN_ENABLED=true
+
+SOLANA_RPC_URL=http://127.0.0.1:8899
+SOLANA_COMMITMENT=confirmed
+SOLANA_PROGRAM_ID=<PROGRAM_ID_LOCALNET>
+
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8080
+NEXT_PUBLIC_PROGRAM_ID=<PROGRAM_ID_LOCALNET>
+```
+
+> `SOLANA_PROGRAM_ID` và `NEXT_PUBLIC_PROGRAM_ID` phải trùng nhau.
+
+## 5.2 Frontend env `apps/web/.env.local` (bắt buộc cho hybrid UI)
+
+```env
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8080
+NEXT_PUBLIC_HYBRID_ONCHAIN_ENABLED=true
+NEXT_PUBLIC_SOLANA_RPC_URL=http://127.0.0.1:8899
+NEXT_PUBLIC_SOLANA_COMMITMENT=confirmed
+NEXT_PUBLIC_PROGRAM_ID=<PROGRAM_ID_LOCALNET>
+```
+
+> Nếu thiếu `NEXT_PUBLIC_HYBRID_ONCHAIN_ENABLED=true`, frontend sẽ đi flow off-chain cũ (`/api/v1/categories`, `/api/v1/expenses`, `/api/v1/expenses/:id/status`).
 
 ---
 
-## 7) Hướng dẫn chạy local (chuẩn đang dùng)
+## 6) Chạy local chuẩn (4 terminal)
 
-### Bước 1 — Chạy Solana local validator (terminal WSL #1)
+## Terminal #1 — Solana local validator
 
 ```bash
 pkill -f solana-test-validator || true
@@ -96,12 +97,7 @@ solana-test-validator \
   --dynamic-port-range 18001-18100
 ```
 
-Khi thấy:
-- `JSON RPC URL: http://127.0.0.1:8899`
-- slot tăng liên tục (`Processed/Confirmed/Finalized`)
-=> local blockchain đang chạy OK.
-
-### Bước 2 — Deploy contract localnet (terminal WSL #2)
+## Terminal #2 — Deploy program localnet
 
 ```bash
 pnpm run deploy:localnet
@@ -111,71 +107,87 @@ Hoặc thủ công:
 
 ```bash
 cd contracts/expense_program
-anchor build --no-idl
+anchor build
 anchor deploy --provider.cluster localnet
 ```
 
-Lấy program id:
+Lấy Program ID:
 
 ```bash
-solana address -k contracts/expense_program/target/deploy/expense_program-keypair.json
+solana address -k target/deploy/expense_program-keypair.json
 ```
 
-Update `.env`:
+Cập nhật lại `.env` + `apps/web/.env.local` bằng Program ID vừa deploy.
 
-```env
-SOLANA_RPC_URL=http://127.0.0.1:8899
-PROGRAM_ID=<PROGRAM_ID_LOCALNET>
-NEXT_PUBLIC_PROGRAM_ID=<PROGRAM_ID_LOCALNET>
-NEXT_PUBLIC_SOLANA_CLUSTER=localnet
-```
-
-### Bước 3 — Chạy API (terminal WSL #3)
+## Terminal #3 — API
 
 ```bash
 cargo run --manifest-path apps/api/Cargo.toml
 ```
 
-Expected log:
+Expected: `API listening on 0.0.0.0:8080`
 
-```text
-API listening on 0.0.0.0:8080
-```
-
-### Bước 4 — Chạy Web (terminal WSL #4)
+## Terminal #4 — Web
 
 ```bash
 pnpm --filter web dev
 ```
 
-Expected log:
+Expected: `http://localhost:3000`
 
-```text
-Local: http://localhost:3000
+> Mỗi lần đổi `NEXT_PUBLIC_*`, bắt buộc restart `pnpm --filter web dev`.
+
+---
+
+## 7) Phantom setup cho localnet
+
+Trong Phantom:
+
+1. `Developer Settings` bật `Testnet Mode`
+2. Chọn **Solana Localnet** (không chọn Devnet/Testnet nếu backend đang local RPC)
+3. Dùng đúng account đang active để test
+
+Airdrop SOL cho account đang active:
+
+```bash
+export SOLANA_RPC_URL=http://127.0.0.1:8899
+export WALLET=<PHANTOM_ACTIVE_PUBLIC_KEY>
+
+SOLANA_URL="$SOLANA_RPC_URL" solana airdrop 5 "$WALLET"
+SOLANA_URL="$SOLANA_RPC_URL" solana balance "$WALLET"
 ```
 
 ---
 
-## 8) Quy trình sử dụng nhanh
+## 8) Flow hybrid trên UI (manual checklist)
 
-1. Mở `http://localhost:3000`
-2. Connect wallet -> Sign In With Wallet
-3. Tạo category
-4. Tạo expense (đúng category UUID)
-5. Kiểm tra Monthly Report cập nhật tổng
+1. Mở `http://localhost:3000`, sign in bằng wallet.
+2. Tạo category từ UI.
+3. Tạo expense từ UI.
+4. Approve expense (admin).
+5. Kiểm tra Network tab phải có:
+   - `POST /api/v1/onchain/categories/commit`
+   - `POST /api/v1/onchain/expenses/commit-create`
+   - `POST /api/v1/onchain/expenses/:id/commit-status`
+6. Kiểm tra DB `categories` / `expenses_read_model` có cột onchain (`tx_hash`, `onchain_*`, `status_tx_hash`) khác `NULL`.
 
 ---
 
-## 9) Các vấn đề đã gặp & cách xử lý
+## 9) Verify E2E strict
 
-- **Devnet faucet rate-limit / thiếu SOL**
-  - Chuyển sang **localnet** để dev miễn phí, ổn định.
-- **Windows validator lỗi quyền truy cập (Access denied)**
-  - Chạy validator qua **WSL**.
-- **`Failed to fetch` khi create expense**
-  - Bổ sung CORS header `x-idempotency-key` ở API.
-- **Hydration mismatch (`Authenticated: No/Yes`)**
-  - Đồng bộ `isAuthed` sau mount bằng `useEffect`, tránh lệch SSR/client.
+Sau khi có tx hash/token thật:
+
+```bash
+export ACCESS_TOKEN='<JWT_ACCESS_TOKEN>'
+export CATEGORY_TX_HASH='<CATEGORY_TX_HASH>'
+export EXPENSE_CREATE_TX_HASH='<EXPENSE_CREATE_TX_HASH>'
+export EXPENSE_STATUS_TX_HASH='<EXPENSE_STATUS_TX_HASH>'
+export EXPENSE_ID='<EXPENSE_UUID>'
+
+./scripts/verify_hybrid_e2e.sh --strict
+```
+
+Script sẽ fail nếu thiếu env hoặc DB/audit chưa sync.
 
 ---
 
@@ -189,16 +201,43 @@ pnpm run test:web
 pnpm run deploy:localnet
 pnpm run deploy:devnet
 bash scripts/test-all.sh
+./scripts/verify_hybrid_e2e.sh
+./scripts/verify_hybrid_e2e.sh --strict
 ```
 
 ---
 
-## 11) Security baseline
+## 11) Troubleshooting nhanh
+
+- **UI vẫn gọi `/api/v1/categories` thay vì `/api/v1/onchain/...`**
+  - Thiếu `NEXT_PUBLIC_HYBRID_ONCHAIN_ENABLED=true` trong `apps/web/.env.local`
+  - Chưa restart web dev server
+
+- **Phantom báo thiếu SOL**
+  - Airdrop sai ví (không phải account active)
+  - Phantom đang Devnet/Testnet thay vì Localnet
+
+- **`transaction not found at selected commitment`**
+  - RPC/commitment mismatch
+  - Dùng `SOLANA_COMMITMENT=confirmed` cho local dev
+
+- **`jwt wallet is not a transaction signer`**
+  - Token wallet khác ví ký transaction
+
+- **`--strict requires ...`**
+  - Chưa export đủ env bắt buộc (`ACCESS_TOKEN`, 3 tx hash, `EXPENSE_ID`)
+
+---
+
+## 12) Security baseline
 
 - Verify wallet signature ở backend
-- JWT access token theo session
-- RBAC theo role
-- Idempotency cho endpoint ghi
-- Audit log cho thao tác quan trọng
+- JWT + refresh/session revoke
+- RBAC (`user/admin/auditor`)
+- Idempotency cho API ghi
+- Audit logs cho action quan trọng
+- Hybrid constraints ở DB để đảm bảo dữ liệu onchain/offchain nhất quán
 
-Xem thêm: [docs/Security.md](docs/Security.md)
+Xem thêm:
+- [docs/Architecture.md](docs/Architecture.md)
+- [docs/Security.md](docs/Security.md)

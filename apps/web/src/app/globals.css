@@ -3,23 +3,28 @@
 @tailwind utilities;
 
 :root {
-  --background: 222 31% 9%;
+  --background: 228 32% 7%;
   --foreground: 210 40% 98%;
-  --card: 224 33% 12%;
+  --card: 230 34% 11%;
   --card-foreground: 210 40% 98%;
-  --border: 220 27% 22%;
-  --input: 220 27% 18%;
-  --primary: 258 90% 66%;
+  --border: 226 30% 21%;
+  --input: 226 28% 16%;
+  --primary: 266 88% 67%;
   --primary-foreground: 210 40% 98%;
-  --secondary: 220 24% 18%;
+  --secondary: 226 25% 16%;
   --secondary-foreground: 210 40% 98%;
-  --muted: 220 20% 16%;
-  --muted-foreground: 215 20% 70%;
-  --accent: 190 95% 45%;
+  --muted: 226 20% 14%;
+  --muted-foreground: 218 20% 71%;
+  --accent: 193 92% 51%;
   --accent-foreground: 222 47% 11%;
-  --success: 144 60% 45%;
+  --success: 149 63% 44%;
   --success-foreground: 210 40% 98%;
-  --radius: 0.8rem;
+  --surface-1: 228 30% 9%;
+  --surface-2: 228 28% 12%;
+  --surface-3: 228 26% 16%;
+  --border-strong: 228 38% 30%;
+  --ring-strong: 266 88% 67%;
+  --radius: 0.9rem;
 }
 
 * {
@@ -28,6 +33,32 @@
 
 body {
   @apply min-h-screen bg-background bg-chain-grid text-foreground antialiased;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  background:
+    radial-gradient(circle at 10% 10%, hsl(var(--primary) / 0.12), transparent 38%),
+    radial-gradient(circle at 90% 12%, hsl(var(--accent) / 0.1), transparent 36%),
+    radial-gradient(circle at 50% 100%, hsl(var(--primary) / 0.08), transparent 42%);
+}
+
+@layer components {
+  .surface-toolbar {
+    @apply sticky top-16 z-20 flex flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-surface-1/85 p-2 backdrop-blur;
+  }
+
+  .surface-list-item {
+    @apply rounded-md border border-border/60 bg-surface-1/65 px-3 py-2;
+  }
+
+  .surface-subpanel {
+    @apply rounded-md border border-border/60 bg-surface-2/70;
+  }
 }
 
 input,

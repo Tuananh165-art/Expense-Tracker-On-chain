@@ -1,6 +1,7 @@
 use crate::{config::AppConfig, models::*};
 use chrono::{Duration, Utc};
 use serde_json::Value;
+use sqlx::PgPool;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::RwLock;
 use uuid::Uuid;
@@ -8,6 +9,7 @@ use uuid::Uuid;
 #[derive(Clone)]
 pub struct AppState {
     pub config: AppConfig,
+    pub pg_pool: Option<PgPool>,
     pub users: Arc<RwLock<HashMap<Uuid, User>>>,
     pub users_by_wallet: Arc<RwLock<HashMap<String, Uuid>>>,
     pub categories: Arc<RwLock<HashMap<Uuid, Category>>>,
@@ -21,9 +23,10 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(config: AppConfig) -> Self {
+    pub fn new(config: AppConfig, pg_pool: Option<PgPool>) -> Self {
         Self {
             config,
+            pg_pool,
             users: Arc::new(RwLock::new(HashMap::new())),
             users_by_wallet: Arc::new(RwLock::new(HashMap::new())),
             categories: Arc::new(RwLock::new(HashMap::new())),

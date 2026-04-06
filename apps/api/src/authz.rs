@@ -1,4 +1,8 @@
-use crate::{auth::AuthUser, error::{AppError, AppResult}, models::Role};
+use crate::{
+    auth::AuthUser,
+    error::{AppError, AppResult},
+    models::Role,
+};
 
 pub fn require_roles(auth: &AuthUser, roles: &[Role]) -> AppResult<()> {
     if roles.iter().any(|r| r == &auth.role) {

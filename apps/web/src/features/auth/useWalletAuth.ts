@@ -1,7 +1,17 @@
 "use client";
 
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiClient, setAccessToken } from "../../lib/sdk";
+
+export const meKey = ["users", "me"] as const;
+
+export function useMe(enabled = true) {
+  return useQuery({
+    queryKey: meKey,
+    queryFn: () => apiClient.me(),
+    enabled,
+  });
+}
 
 export function useWalletAuth() {
   const challengeMutation = useMutation({
