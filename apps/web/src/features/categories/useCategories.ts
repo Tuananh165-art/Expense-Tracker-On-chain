@@ -2,8 +2,31 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "../../lib/sdk";
+import {
+  connectSolanaWallet,
+  getHybridConfig,
+  getSolanaProvider,
+  sendCreateCategoryTx,
+} from "../../lib/solana-wallet";
 
 export const categoriesKey = ["categories"] as const;
+
+async function retryCategoryCommit(txHash: string, categoryName: string, maxAttempts = 8) {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await apiClient.commitCategoryOnchain({ tx_hash: txHash, category_name: categoryName });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      lastError = error;
+      if (!message.includes("transaction not found at selected commitment") || attempt === maxAttempts) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("onchain category commit failed");
+}
 
 export function useCategories(enabled = true) {
   return useQuery({
@@ -16,7 +39,26 @@ export function useCategories(enabled = true) {
 export function useCreateCategory() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (name: string) => apiClient.createCategory({ name }),
+    mutationFn: async (name: string) => {
+      const categoryName = name.trim();
+      if (!categoryName) {
+        throw new Error("Category name is required");
+      }
+
+      const hybrid = getHybridConfig();
+      if (!hybrid.enabled) {
+        return apiClient.createCategory({ name: categoryName });
+      }
+
+      const provider = getSolanaProvider();
+      if (!provider) {
+        throw new Error("Solana wallet not found");
+      }
+
+      const walletAddress = await connectSolanaWallet(provider);
+      const { txHash } = await sendCreateCategoryTx(provider, walletAddress, categoryName);
+      return retryCategoryCommit(txHash, categoryName);
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: categoriesKey }),
   });
 }
