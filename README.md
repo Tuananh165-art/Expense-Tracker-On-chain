@@ -161,17 +161,81 @@ SOLANA_URL="$SOLANA_RPC_URL" solana balance "$WALLET"
 
 ---
 
-## 8) Flow hybrid trên UI (manual checklist)
+## 8) Demo workflow frontend theo ảnh (Account 2 tạo, Account 1 admin duyệt)
 
-1. Mở `http://localhost:3000`, sign in bằng wallet.
-2. Tạo category từ UI.
-3. Tạo expense từ UI.
-4. Approve expense (admin).
-5. Kiểm tra Network tab phải có:
-   - `POST /api/v1/onchain/categories/commit`
-   - `POST /api/v1/onchain/expenses/commit-create`
-   - `POST /api/v1/onchain/expenses/:id/commit-status`
-6. Kiểm tra DB `categories` / `expenses_read_model` có cột onchain (`tx_hash`, `onchain_*`, `status_tx_hash`) khác `NULL`.
+Scenario demo trong thư mục `asset/`:
+- **Account 2 (user)**: sign in, tạo category, tạo expense.
+- **Account 1 (admin)**: sign in và approve expense của user.
+
+### 8.1 Chuẩn bị ví và localnet
+
+1. Mở Phantom, unlock ví:
+
+![Phantom unlock](asset/Screenshot%202026-04-08%20170811.png)
+
+2. Đảm bảo đang ở Solana Localnet (nếu Phantom báo hạn chế token balance ở Localnet là bình thường):
+
+![Phantom localnet account](asset/Screenshot%202026-04-08%20171154.png)
+
+3. Nếu thiếu SOL, airdrop theo mục **7) Phantom setup cho localnet** ở trên.
+
+### 8.2 Account 2 sign in và thao tác user
+
+4. Trên web `http://localhost:3000`, bấm **Sign in with Wallet**:
+
+![Sign in page](asset/Screenshot%202026-04-08%20171057.png)
+
+5. Phantom hiện popup ký message login, bấm **Confirm**:
+
+![Sign message](asset/Screenshot%202026-04-08%20171207.png)
+
+6. Sau đăng nhập thành công, vào Dashboard:
+
+![Dashboard after signin](asset/Screenshot%202026-04-08%20170852.png)
+
+7. Vào tab **Categories**, tạo category mới:
+
+![Create category](asset/Screenshot%202026-04-08%20171111.png)
+
+8. Vào tab **Expenses**, tạo expense thuộc category vừa tạo:
+
+![Create expense](asset/Screenshot%202026-04-08%20171135.png)
+
+9. Khi Phantom yêu cầu confirm transaction, bấm **Confirm** (ở localnet có thể thấy cảnh báo `Failed to simulate...`, cần kiểm tra đúng site `localhost:3000` trước khi xác nhận):
+
+![Confirm transaction](asset/Screenshot%202026-04-08%20170823.png)
+
+10. Quay lại danh sách Expenses và kiểm tra record mới ở trạng thái `pending`:
+
+![Expenses pending](asset/Screenshot%202026-04-08%20171222.png)
+
+### 8.3 Chuyển Account 1 (admin) để duyệt
+
+11. Logout account hiện tại từ menu góc phải:
+
+![Logout menu](asset/Screenshot%202026-04-08%20171234.png)
+
+12. Đăng nhập bằng **Account 1** (đã có role `admin` trong DB), vào tab Expenses:
+
+![Expenses admin view](asset/Screenshot%202026-04-08%20171222.png)
+
+13. Bấm **Approve** cho expense `pending`. Sau khi commit thành công, expense chuyển sang `approved` (có thể lọc theo status để kiểm tra).
+
+14. Có thể kiểm tra thêm Dashboard/Reports để xác nhận dữ liệu đã cập nhật:
+
+![Dashboard summary](asset/Screenshot%202026-04-08%20171359.png)
+![Reports](asset/Screenshot%202026-04-08%20171343.png)
+
+### 8.4 Checklist xác nhận hybrid commit
+
+- Network tab cần có đủ request:
+  - `POST /api/v1/onchain/categories/commit`
+  - `POST /api/v1/onchain/expenses/commit-create`
+  - `POST /api/v1/onchain/expenses/:id/commit-status`
+- DB cần có cột on-chain khác `NULL`:
+  - `categories.tx_hash`, `categories.onchain_category_pda`, `categories.onchain_slot`
+  - `expenses_read_model.tx_hash`, `expenses_read_model.onchain_expense_pda`
+  - `expenses_read_model.status_tx_hash`, `expenses_read_model.status_onchain_slot`
 
 ---
 
