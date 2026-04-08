@@ -3,6 +3,7 @@ use axum::{
     extract::{FromRef, FromRequestParts},
     http::{header, request::Parts},
 };
+use sqlx::Row;
 use uuid::Uuid;
 
 use crate::{
@@ -98,11 +99,36 @@ where
             .parse::<Uuid>()
             .map_err(|_| AppError::unauthorized("Invalid subject claim"))?;
 
-        let role = match claims.role.as_str() {
-            "admin" => Role::Admin,
-            "auditor" => Role::Auditor,
-            "user" => Role::User,
-            _ => return Err(AppError::unauthorized("Invalid role claim")),
+        let role = if app_state.config.auth_pg_enabled {
+            let pool = app_state
+                .pg_pool
+                .as_ref()
+                .ok_or_else(|| AppError::internal("postgres pool is not initialized"))?;
+
+            let row = sqlx::query("SELECT role FROM users WHERE id = $1")
+                .bind(user_id)
+                .fetch_optional(pool)
+                .await
+                .map_err(|_| AppError::internal("failed to load user role"))?
+                .ok_or_else(|| AppError::unauthorized("User not found"))?;
+
+            let role_raw: String = row
+                .try_get("role")
+                .map_err(|_| AppError::internal("invalid user role"))?;
+
+            match role_raw.as_str() {
+                "admin" => Role::Admin,
+                "auditor" => Role::Auditor,
+                "user" => Role::User,
+                _ => return Err(AppError::unauthorized("Invalid role in database")),
+            }
+        } else {
+            match claims.role.as_str() {
+                "admin" => Role::Admin,
+                "auditor" => Role::Auditor,
+                "user" => Role::User,
+                _ => return Err(AppError::unauthorized("Invalid role claim")),
+            }
         };
 
         Ok(Self {

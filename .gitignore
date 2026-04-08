@@ -25,3 +25,4 @@ target/
 # Anchor / Solana artifacts
 contracts/expense_program/target/
 contracts/expense_program/.anchor/
+/test-ledger/

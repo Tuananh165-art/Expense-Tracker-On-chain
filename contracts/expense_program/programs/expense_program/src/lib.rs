@@ -6,6 +6,16 @@ declare_id!("rzMxNuut6R34aFgt8NY9hj3SoRB37iszrsSqZR2DSnB");
 pub mod expense_program {
     use super::*;
 
+    pub fn init_program_config(
+        ctx: Context<InitProgramConfig>,
+        admin_authority: Pubkey,
+    ) -> Result<()> {
+        let config = &mut ctx.accounts.program_config;
+        config.admin_authority = admin_authority;
+        config.bump = ctx.bumps.program_config;
+        Ok(())
+    }
+
     pub fn init_user_profile(ctx: Context<InitUserProfile>) -> Result<()> {
         let profile = &mut ctx.accounts.user_profile;
         profile.owner = ctx.accounts.owner.key();
@@ -51,8 +61,14 @@ pub mod expense_program {
         ctx: Context<UpdateExpenseStatus>,
         status: ExpenseStatus,
     ) -> Result<()> {
+        let signer = ctx.accounts.owner.key();
         let expense = &mut ctx.accounts.expense;
-        require!(expense.owner == ctx.accounts.owner.key(), ExpenseError::Unauthorized);
+        let admin = ctx.accounts.program_config.admin_authority;
+
+        require!(
+            expense.owner == signer || admin == signer,
+            ExpenseError::Unauthorized
+        );
         require!(
             expense.status == ExpenseStatus::Pending,
             ExpenseError::InvalidStatusTransition
@@ -67,6 +83,16 @@ pub enum ExpenseStatus {
     Pending,
     Approved,
     Rejected,
+}
+
+#[account]
+pub struct ProgramConfig {
+    pub admin_authority: Pubkey,
+    pub bump: u8,
+}
+
+impl ProgramConfig {
+    pub const LEN: usize = 8 + 32 + 1;
 }
 
 #[account]
@@ -104,6 +130,21 @@ pub struct Expense {
 
 impl Expense {
     pub const LEN: usize = 8 + 32 + 8 + 32 + 8 + 32 + 1 + 1;
+}
+
+#[derive(Accounts)]
+pub struct InitProgramConfig<'info> {
+    #[account(mut)]
+    pub owner: Signer<'info>,
+    #[account(
+        init,
+        payer = owner,
+        space = ProgramConfig::LEN,
+        seeds = [b"program_config"],
+        bump
+    )]
+    pub program_config: Account<'info, ProgramConfig>,
+    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
@@ -172,6 +213,11 @@ pub struct CreateExpense<'info> {
 #[derive(Accounts)]
 pub struct UpdateExpenseStatus<'info> {
     pub owner: Signer<'info>,
+    #[account(
+        seeds = [b"program_config"],
+        bump = program_config.bump
+    )]
+    pub program_config: Account<'info, ProgramConfig>,
     #[account(mut)]
     pub expense: Account<'info, Expense>,
 }

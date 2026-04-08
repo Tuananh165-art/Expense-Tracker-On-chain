@@ -617,6 +617,28 @@ pub async fn history(
         .parse::<Uuid>()
         .map_err(|_| AppError::bad_request("invalid expense_id"))?;
 
+    if state.config.expenses_pg_enabled && auth.role == Role::User {
+        let pool = state
+            .pg_pool
+            .as_ref()
+            .ok_or_else(|| AppError::internal("postgres pool is not initialized"))?;
+
+        let owner_row = sqlx::query("SELECT owner_user_id FROM expenses_read_model WHERE id = $1")
+            .bind(expense_id)
+            .fetch_optional(pool)
+            .await
+            .map_err(|_| AppError::internal("failed to load expense owner"))?
+            .ok_or_else(|| AppError::not_found("expense not found"))?;
+
+        let owner_user_id: Uuid = owner_row
+            .try_get("owner_user_id")
+            .map_err(|_| AppError::internal("invalid expense row"))?;
+
+        if owner_user_id != auth.user_id {
+            return Err(AppError::forbidden("cannot access history of another user's expense"));
+        }
+    }
+
     let from = match query.from.as_deref() {
         Some(v) => Some(
             chrono::DateTime::parse_from_rfc3339(v)

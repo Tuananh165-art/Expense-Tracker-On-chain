@@ -7,10 +7,16 @@ describe("expense_program lifecycle", () => {
 
   const program = anchor.workspace.ExpenseProgram as Program;
   const owner = provider.wallet;
+  const admin = anchor.web3.Keypair.generate();
   const stranger = anchor.web3.Keypair.generate();
 
   const categoryName = "Food";
   const expenseId = new anchor.BN(1);
+
+  const [programConfigPda] = anchor.web3.PublicKey.findProgramAddressSync(
+    [Buffer.from("program_config")],
+    program.programId
+  );
 
   const [userProfilePda] = anchor.web3.PublicKey.findProgramAddressSync(
     [Buffer.from("user_profile"), owner.publicKey.toBuffer()],
@@ -26,6 +32,28 @@ describe("expense_program lifecycle", () => {
     [Buffer.from("expense"), owner.publicKey.toBuffer(), expenseId.toArrayLike(Buffer, "le", 8)],
     program.programId
   );
+
+  it("initializes program config", async () => {
+    const airdropSig = await provider.connection.requestAirdrop(
+      admin.publicKey,
+      2 * anchor.web3.LAMPORTS_PER_SOL
+    );
+    await provider.connection.confirmTransaction(airdropSig, "confirmed");
+
+    await program.methods
+      .initProgramConfig(admin.publicKey)
+      .accounts({
+        owner: owner.publicKey,
+        programConfig: programConfigPda,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .rpc();
+
+    const config = await program.account.programConfig.fetch(programConfigPda);
+    if (!config.adminAuthority.equals(admin.publicKey)) {
+      throw new Error("admin authority mismatch in program config");
+    }
+  });
 
   it("initializes user profile", async () => {
     await program.methods
@@ -87,18 +115,53 @@ describe("expense_program lifecycle", () => {
     }
   });
 
-  it("updates expense status to approved", async () => {
+  it("updates expense status to approved by admin", async () => {
     await program.methods
       .updateExpenseStatus({ approved: {} })
       .accounts({
-        owner: owner.publicKey,
+        owner: admin.publicKey,
+        programConfig: programConfigPda,
         expense: expensePda,
       })
+      .signers([admin])
       .rpc();
 
     const expense = await program.account.expense.fetch(expensePda);
     if (expense.status.approved == null) {
       throw new Error("expense status should be approved");
+    }
+  });
+
+  it("updates another expense status to approved by owner", async () => {
+    const expenseIdOwnerApprove = new anchor.BN(3);
+    const [expenseOwnerApprovePda] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("expense"), owner.publicKey.toBuffer(), expenseIdOwnerApprove.toArrayLike(Buffer, "le", 8)],
+      program.programId
+    );
+
+    await program.methods
+      .createExpense(expenseIdOwnerApprove, new anchor.BN(50_000), Array(32).fill(5))
+      .accounts({
+        owner: owner.publicKey,
+        userProfile: userProfilePda,
+        category: categoryPda,
+        expense: expenseOwnerApprovePda,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .rpc();
+
+    await program.methods
+      .updateExpenseStatus({ approved: {} })
+      .accounts({
+        owner: owner.publicKey,
+        programConfig: programConfigPda,
+        expense: expenseOwnerApprovePda,
+      })
+      .rpc();
+
+    const expense = await program.account.expense.fetch(expenseOwnerApprovePda);
+    if (expense.status.approved == null) {
+      throw new Error("owner should be able to approve own expense");
     }
   });
 
@@ -142,6 +205,7 @@ describe("expense_program lifecycle", () => {
         .updateExpenseStatus({ rejected: {} })
         .accounts({
           owner: stranger.publicKey,
+          programConfig: programConfigPda,
           expense: expensePda,
         })
         .signers([stranger])

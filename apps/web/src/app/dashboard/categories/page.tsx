@@ -3,7 +3,12 @@
 import Link from "next/link";
 import React, { useEffect, useRef, useState } from "react";
 import { getAccessToken } from "../../../lib/sdk";
-import { useCategories, useCreateCategory } from "../../../features/categories/useCategories";
+import { getHybridConfig } from "../../../lib/solana-wallet";
+import {
+  useCategories,
+  useCheckWalletSolOrRequestAirdrop,
+  useCreateCategory,
+} from "../../../features/categories/useCategories";
 import { Button, buttonVariants } from "../../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
@@ -21,6 +26,14 @@ export default function CategoriesPage() {
 
   const categoriesQuery = useCategories(isAuthed);
   const createCategoryMutation = useCreateCategory();
+  const checkWalletFundingMutation = useCheckWalletSolOrRequestAirdrop();
+
+  const hybrid = getHybridConfig();
+  const fundingInfo = checkWalletFundingMutation.data;
+  const fundingError =
+    checkWalletFundingMutation.error instanceof Error ? checkWalletFundingMutation.error.message : null;
+  const createCategoryError =
+    createCategoryMutation.error instanceof Error ? createCategoryMutation.error.message : null;
 
   return (
     <div className="space-y-8">
@@ -59,6 +72,27 @@ export default function CategoriesPage() {
               Create
             </Button>
           </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => checkWalletFundingMutation.mutate()}
+              disabled={!isAuthed || !hybrid.enabled || checkWalletFundingMutation.isPending}
+            >
+              {checkWalletFundingMutation.isPending ? "Checking wallet..." : "Check wallet SOL / Request airdrop"}
+            </Button>
+          </div>
+
+          {fundingInfo ? (
+            <p className="text-xs text-muted-foreground">
+              {fundingInfo.status === "airdropped"
+                ? `Airdrop received. Balance: ${(fundingInfo.lamportsAfter / 1_000_000_000).toFixed(3)} SOL on ${fundingInfo.rpcUrl}.`
+                : `Wallet funded: ${(fundingInfo.lamportsAfter / 1_000_000_000).toFixed(3)} SOL on ${fundingInfo.rpcUrl}.`}
+            </p>
+          ) : null}
+
+          {fundingError ? <p className="text-xs text-red-300">{fundingError}</p> : null}
+          {createCategoryError ? <p className="text-xs text-red-300">{createCategoryError}</p> : null}
         </CardContent>
       </Card>
 

@@ -1,5 +1,7 @@
 # Expense Tracker On-chain
 
+> Tài liệu đầy đủ (keyword, thuật ngữ, tech stack, blockchain, database schema, setup/run chi tiết): **[docs/Project-Guide.md](docs/Project-Guide.md)**
+
 Ứng dụng quản lý chi tiêu theo mô hình **hybrid on-chain + off-chain**:
 - **On-chain (Solana/Anchor):** ghi nhận transaction có thể kiểm toán.
 - **Off-chain (Rust/Axum + Postgres):** auth, RBAC, read model, reporting.

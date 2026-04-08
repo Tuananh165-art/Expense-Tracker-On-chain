@@ -6,10 +6,20 @@ import {
   connectSolanaWallet,
   getHybridConfig,
   getSolanaProvider,
+  getWalletBalanceLamports,
+  requestSolAirdrop,
   sendCreateCategoryTx,
 } from "../../lib/solana-wallet";
 
 export const categoriesKey = ["categories"] as const;
+
+export interface WalletFundingStatus {
+  status: "funded" | "airdropped";
+  walletAddress: string;
+  rpcUrl: string;
+  lamportsBefore: number;
+  lamportsAfter: number;
+}
 
 async function retryCategoryCommit(txHash: string, categoryName: string, maxAttempts = 8) {
   let lastError: unknown;
@@ -33,6 +43,43 @@ export function useCategories(enabled = true) {
     queryKey: categoriesKey,
     queryFn: () => apiClient.listCategories(),
     enabled,
+  });
+}
+
+export function useCheckWalletSolOrRequestAirdrop() {
+  return useMutation<WalletFundingStatus>({
+    mutationFn: async () => {
+      const hybrid = getHybridConfig();
+      if (!hybrid.enabled) {
+        throw new Error("Hybrid mode is disabled");
+      }
+
+      const provider = getSolanaProvider();
+      if (!provider) {
+        throw new Error("Solana wallet not found");
+      }
+
+      const walletAddress = await connectSolanaWallet(provider);
+      const { lamports: lamportsBefore, rpcUrl } = await getWalletBalanceLamports(walletAddress);
+      if (lamportsBefore > 0) {
+        return {
+          status: "funded",
+          walletAddress,
+          rpcUrl,
+          lamportsBefore,
+          lamportsAfter: lamportsBefore,
+        };
+      }
+
+      const { lamportsAfter } = await requestSolAirdrop(walletAddress);
+      return {
+        status: "airdropped",
+        walletAddress,
+        rpcUrl,
+        lamportsBefore,
+        lamportsAfter,
+      };
+    },
   });
 }
 

@@ -107,9 +107,11 @@ export function useCreateExpense() {
       }
 
       const walletAddress = await connectSolanaWallet(provider);
-      const category = (await apiClient.listCategories()).find((item) => item.id === payload.category_id);
+      const categoryId = payload.category_id.trim();
+      const categories = await apiClient.listCategories();
+      const category = categories.find((item) => item.id === categoryId);
       if (!category) {
-        throw new Error("category not found for hybrid onchain flow");
+        throw new Error("Category ID not found. Use a committed category ID from Category list.");
       }
 
       const categoryPda = deriveCategoryPda(walletAddress, category.name, hybrid.programId);
@@ -161,9 +163,7 @@ export function useUpdateExpenseStatus() {
       const meta = (createLog?.metadata ?? {}) as Record<string, unknown>;
       const onchainExpensePda =
         typeof meta.onchain_expense_pda === "string" ? meta.onchain_expense_pda : undefined;
-      const ownerWallet = typeof meta.signer_wallet === "string" ? meta.signer_wallet : createLog?.actor_wallet;
-
-      if (!ownerWallet || !onchainExpensePda) {
+      if (!onchainExpensePda) {
         throw new Error("onchain expense metadata not found for status update");
       }
 
@@ -172,8 +172,8 @@ export function useUpdateExpenseStatus() {
         throw new Error("Solana wallet not found");
       }
 
-      await connectSolanaWallet(provider);
-      const txHash = await sendUpdateExpenseStatusTx(provider, ownerWallet, onchainExpensePda, status);
+      const connectedWallet = await connectSolanaWallet(provider);
+      const txHash = await sendUpdateExpenseStatusTx(provider, connectedWallet, onchainExpensePda, status);
       return apiClient.commitExpenseStatusOnchain(expenseId, {
         tx_hash: txHash,
         to_status: status,

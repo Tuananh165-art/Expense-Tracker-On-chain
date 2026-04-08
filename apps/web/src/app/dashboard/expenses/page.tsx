@@ -51,6 +51,11 @@ export default function ExpensesPage() {
   const createExpenseMutation = useCreateExpense();
   const updateExpenseStatusMutation = useUpdateExpenseStatus();
   const historyQuery = useExpenseAuditLogs(expandedHistoryId, isAuthed && Boolean(expandedHistoryId));
+  const createExpenseError =
+    createExpenseMutation.error instanceof Error ? createExpenseMutation.error.message : null;
+  const updateExpenseError =
+    updateExpenseStatusMutation.error instanceof Error ? updateExpenseStatusMutation.error.message : null;
+  const historyError = historyQuery.error instanceof Error ? historyQuery.error.message : null;
 
   useEffect(() => {
     setSearchOffset(0);
@@ -130,6 +135,9 @@ export default function ExpensesPage() {
           {hybridEnabled && !selectedCategory?.name ? (
             <p className="text-xs text-danger">Hybrid mode requires a valid Category ID from committed categories.</p>
           ) : null}
+          {createExpenseError ? <p className="text-xs text-red-300">{createExpenseError}</p> : null}
+          {updateExpenseError ? <p className="text-xs text-red-300">{updateExpenseError}</p> : null}
+          {historyError ? <p className="text-xs text-red-300">{historyError}</p> : null}
         </CardContent>
       </Card>
 

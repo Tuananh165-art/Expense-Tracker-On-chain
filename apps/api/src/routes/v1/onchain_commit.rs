@@ -473,6 +473,8 @@ pub async fn commit_expense_status(
     )
     .await?;
 
+    let program_config_pda = derive_program_config_pda(&program_id);
+
     let onchain_status = decode_update_status_arg(&verified.data_raw)?;
     if onchain_status != to_status {
         return Err(AppError::bad_request("to_status does not match onchain instruction"));
@@ -554,8 +556,9 @@ pub async fn commit_expense_status(
         .map_err(|_| AppError::internal("invalid expense row"))?;
 
     ensure_account_at(&verified, 0, &auth.wallet)?;
+    ensure_account_at(&verified, 1, &program_config_pda.to_string())?;
     if let Some(expense_pda) = expense_pda {
-        ensure_account_at(&verified, 1, &expense_pda)?;
+        ensure_account_at(&verified, 2, &expense_pda)?;
     }
 
     sqlx::query(
@@ -641,6 +644,10 @@ fn parse_program_id(value: &str) -> AppResult<Pubkey> {
 
 fn parse_wallet_pubkey(value: &str) -> AppResult<Pubkey> {
     Pubkey::from_str(value).map_err(|_| AppError::bad_request("invalid wallet pubkey"))
+}
+
+fn derive_program_config_pda(program_id: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(&[b"program_config"], program_id).0
 }
 
 fn resolve_rpc_url(state: &AppState, rpc_url_override: Option<&str>) -> AppResult<String> {
